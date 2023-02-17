@@ -1,6 +1,6 @@
 *.run
 *.deb
-tf_env/
+tf_venv/
 
 # Created by https://www.toptal.com/developers/gitignore/api/rust,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=rust,python
