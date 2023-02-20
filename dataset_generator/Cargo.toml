@@ -9,6 +9,7 @@ edition = "2021"
 bevy = "0.9.1"
 bevy_mod_fbx = { path = "./bevy_mod_fbx" }
 bevy_editor_pls = "0.2"
+guard = "0.5.1"
 
 [profile.dev.package."*"]
 opt-level = 3
