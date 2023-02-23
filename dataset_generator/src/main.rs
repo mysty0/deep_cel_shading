@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::render_resource::ShaderType};
 use bevy_mod_fbx::{FbxPlugin, FbxScene, FbxMesh};
 use bevy_editor_pls::prelude::*;
 use bevy::{
@@ -19,7 +19,7 @@ fn main() {
         }))
         .add_plugin(FbxPlugin)
         .add_plugin(
-            MaterialPlugin::<FaceMaterial>::default(),
+            MaterialPlugin::<CelMaterial>::default(),
         )
         //.add_plugin(EditorPlugin)
         .add_startup_system(setup)
@@ -44,14 +44,14 @@ fn override_material(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    face_materials: &mut ResMut<Assets<FaceMaterial>>
+    face_materials: &mut ResMut<Assets<CelMaterial>>
 ) {
     let face_ent = query.iter().find(|(name, _, _)| name.as_str() == mesh_name);
     guard! { let Some((_, face_ent, face_material)) = face_ent else { return } }
     guard! { let Some(face_material) = materials.get(face_material) else { return } }
     println!("found {:?}", face_ent);
     
-    let material = FaceMaterial {
+    let material = CelMaterial {
         diffuse: face_material.base_color_texture.clone(),
         light_map: Some(asset_server.load(light_map)),
     };
@@ -72,7 +72,7 @@ fn create_cell_materials(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut query: Query<(&Name, Entity, &Handle<StandardMaterial>)>,
     mut query_visibility: Query<(&Name, &mut Visibility)>,
-    mut face_materials: ResMut<Assets<FaceMaterial>>,
+    mut face_materials: ResMut<Assets<CelMaterial>>,
     asset_server: Res<AssetServer>,
     //map_img: Res<MyMapImage>,
 ) {
@@ -125,7 +125,7 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut custom_materials: ResMut<Assets<FaceMaterial>>,
+    mut custom_materials: ResMut<Assets<CelMaterial>>,
 ) {
     // plane
     commands.spawn(MaterialMeshBundle {
@@ -173,21 +173,82 @@ fn setup(
     ));
 }
 
+#[derive(Debug, Clone, ShaderType)]
+struct Direction {
+    forward: Vec3,
+    right: Vec3
+}
+
+impl Default for Direction {
+    fn default() -> Self {
+        Self { forward: Default::default(), right: Default::default() }
+    }
+}
+
 // This is the struct that will be passed to your shader
 #[derive(AsBindGroup, TypeUuid, Debug, Clone)]
 #[uuid = "f690fdae-d598-45ab-8225-97e2a3f056e0"]
-pub struct FaceMaterial {
+pub struct CelMaterial {
+    is_face: bool,
     #[texture(0)]
     #[sampler(1)]
-    light_map: Option<Handle<Image>>,
+    diffuse: Handle<Image>,
     #[texture(2)]
     #[sampler(3)]
-    diffuse: Option<Handle<Image>>,
+    light_map: Option<Handle<Image>>,
+    #[texture(4)]
+    #[sampler(5)]
+    shadow_map: Handle<Image>,
+    #[texture(6)]
+    #[sampler(7)]
+    shadow_ramp: Handle<Image>,
+    #[uniform(8)]
+    head_direction: Direction,
+    #[uniform(9)]
+    day_night_cycle: f32
 }
 
-impl Material for FaceMaterial {
+impl CelMaterial {
+    fn new(
+        diffuse: Handle<Image>, 
+        shadow_map: Handle<Image>, 
+        shadow_ramp: Handle<Image>, 
+        day_night_cycle: f32
+    ) -> Self {
+        Self {
+            is_face: false,
+            diffuse,
+            light_map: None,
+            shadow_map,
+            shadow_ramp,
+            head_direction: Default::default(),
+            day_night_cycle,
+        }
+    }
+
+    fn new_face(
+        diffuse: Handle<Image>, 
+        light_map: Handle<Image>, 
+        shadow_map: Handle<Image>, 
+        shadow_ramp: Handle<Image>, 
+        head_direction: Direction, 
+        day_night_cycle: f32
+    ) -> Self {
+        Self {
+            is_face: true,
+            diffuse,
+            light_map: Some(light_map),
+            shadow_map,
+            shadow_ramp,
+            head_direction,
+            day_night_cycle,
+        }
+    }
+}
+
+impl Material for CelMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/face_material.wgsl".into()
+        "shaders/cel_material.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {
