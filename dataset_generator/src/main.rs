@@ -13,7 +13,10 @@ pub struct Spin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            watch_for_changes: true,
+            ..Default::default()
+        }))
         .add_plugin(FbxPlugin)
         .add_plugin(
             MaterialPlugin::<FaceMaterial>::default(),
@@ -34,6 +37,33 @@ fn spin_cube(time: Res<Time>, mut query: Query<&mut Handle<StandardMaterial>, Wi
     //}
 }
 
+fn override_material(
+    mesh_name: &str,
+    light_map: &str,
+    query: &mut Query<(&Name, Entity, &Handle<StandardMaterial>)>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    face_materials: &mut ResMut<Assets<FaceMaterial>>
+) {
+    let face_ent = query.iter().find(|(name, _, _)| name.as_str() == mesh_name);
+    guard! { let Some((_, face_ent, face_material)) = face_ent else { return } }
+    guard! { let Some(face_material) = materials.get(face_material) else { return } }
+    println!("found {:?}", face_ent);
+    
+    let material = FaceMaterial {
+        diffuse: face_material.base_color_texture.clone(),
+        light_map: Some(asset_server.load(light_map)),
+    };
+
+    let material = face_materials.add(material);
+
+    commands
+        .entity(face_ent)
+        .remove::<Handle<StandardMaterial>>();
+    commands.entity(face_ent).insert(material);
+}
+
 fn create_cell_materials(
     mut commands: Commands,
     mut ev_asset: EventReader<AssetEvent<FbxScene>>,
@@ -43,16 +73,20 @@ fn create_cell_materials(
     mut query: Query<(&Name, Entity, &Handle<StandardMaterial>)>,
     mut query_visibility: Query<(&Name, &mut Visibility)>,
     mut face_materials: ResMut<Assets<FaceMaterial>>,
+    asset_server: Res<AssetServer>,
     //map_img: Res<MyMapImage>,
 ) {
     for ev in ev_asset.iter() {
         match ev {
             AssetEvent::Created { handle } => {
                 // a texture was just loaded or changed!
-
+                println!("scene loaded");
                 // WARNING: this mutable access will cause another
                 // AssetEvent (Modified) to be emitted!
-                guard! { let Some(scene) = assets.get_mut(handle) else { return } }
+                //guard! { let Some(scene) = assets.get_mut(handle) else { 
+                //    println!("cant get scene handle");
+                //    return 
+                //} }
                 //let scene = .unwrap();
                 // ^ unwrap is OK, because we know it is loaded now
 
@@ -60,25 +94,10 @@ fn create_cell_materials(
                     vis.is_visible = false;
                 }
 
-                println!("meshes {:?}", scene.meshes.iter().map(|m| meshes.get(m.1)?.name.clone()).map(|n| n.unwrap_or(String::new())).collect::<Vec<String>>());
+                //println!("meshes {:?}", scene.meshes.iter().map(|m| meshes.get(m.1)?.name.clone()).map(|n| n.unwrap_or(String::new())).collect::<Vec<String>>());
                 
-                let face_ent = query.iter().find(|(name, _, _)| name.as_str() == "Face");
-                guard! { let Some((_, face_ent, face_material)) = face_ent else { return } }
-                guard! { let Some(face_material) = materials.get(face_material) else { return } }
-                println!("found {:?}", face_ent);
-                
-                let material = FaceMaterial {
-                    color: face_material.base_color,
-                    color_texture: face_material.base_color_texture.clone(),
-                    alpha_mode: AlphaMode::Opaque,
-                };
-
-                let material = face_materials.add(material);
-
-                commands
-                    .entity(face_ent)
-                    .remove::<Handle<StandardMaterial>>();
-                commands.entity(face_ent).insert(material);
+                override_material("Face", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
+                override_material("Face_Eye", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
 
                 // let face_material = scene.materials.get("FbxMaterial@Avatar_Girl_Bow_FischlCostumeHighness_Mat_Face").unwrap();
                 // let face_material = materials.get_mut(face_material).unwrap();
@@ -111,11 +130,10 @@ fn setup(
     // plane
     commands.spawn(MaterialMeshBundle {
         mesh: meshes.add(Mesh::from(shape::Plane { size: 5.0 })),
-        material: custom_materials.add(
-            FaceMaterial {
-                color: Color::BLUE,
-                color_texture: None,
-                alpha_mode: AlphaMode::Opaque,
+        material: materials.add(
+            StandardMaterial {
+                base_color: Color::GREEN,
+                ..default()
             }
         ),//materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
         ..default()
@@ -139,7 +157,7 @@ fn setup(
     });
     // camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-1.0, 1.0, 1.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(-0.5, 1.5, 1.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
         ..default()
     });
 
@@ -162,10 +180,9 @@ pub struct FaceMaterial {
     #[texture(0)]
     #[sampler(1)]
     light_map: Option<Handle<Image>>,
-    #[texture(0)]
-    #[sampler(1)]
-    light_map: Option<Handle<Image>>,
-    alpha_mode: AlphaMode,
+    #[texture(2)]
+    #[sampler(3)]
+    diffuse: Option<Handle<Image>>,
 }
 
 impl Material for FaceMaterial {
@@ -174,6 +191,6 @@ impl Material for FaceMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        self.alpha_mode
+        AlphaMode::Opaque
     }
 }
