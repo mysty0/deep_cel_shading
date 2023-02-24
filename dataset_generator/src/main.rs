@@ -1,5 +1,5 @@
 use bevy::{prelude::*, render::render_resource::ShaderType};
-use bevy_mod_fbx::{FbxPlugin, FbxScene, FbxMesh};
+use bevy_mod_fbx::{FbxPlugin, FbxScene, FbxMesh, material_loader::MaterialLoader};
 use bevy_editor_pls::prelude::*;
 use bevy::{
     reflect::TypeUuid,
@@ -11,12 +11,25 @@ use bevy::{
 #[derive(Component)]
 pub struct Spin;
 
+pub const CELL_LOADER: MaterialLoader<CelMaterial> = MaterialLoader {
+    static_load: &[],
+    dynamic_load: &[],
+    preprocess_textures: |_, _| {},
+    with_textures: |material_obj, _| {
+        let name = material_obj.name()?;
+        let is_face = name.contains("Mat_Face");
+
+        let diffuse = material_obj.
+    }
+};
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(AssetPlugin {
             watch_for_changes: true,
             ..Default::default()
         }))
+       // .insert_resource(FbxMaterialLoaders(vec![]))
         .add_plugin(FbxPlugin)
         .add_plugin(
             MaterialPlugin::<CelMaterial>::default(),
@@ -37,32 +50,32 @@ fn spin_cube(time: Res<Time>, mut query: Query<&mut Handle<StandardMaterial>, Wi
     //}
 }
 
-fn override_material(
-    mesh_name: &str,
-    light_map: &str,
-    query: &mut Query<(&Name, Entity, &Handle<StandardMaterial>)>,
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    face_materials: &mut ResMut<Assets<CelMaterial>>
-) {
-    let face_ent = query.iter().find(|(name, _, _)| name.as_str() == mesh_name);
-    guard! { let Some((_, face_ent, face_material)) = face_ent else { return } }
-    guard! { let Some(face_material) = materials.get(face_material) else { return } }
-    println!("found {:?}", face_ent);
+// fn override_material(
+//     mesh_name: &str,
+//     light_map: &str,
+//     query: &mut Query<(&Name, Entity, &Handle<StandardMaterial>)>,
+//     commands: &mut Commands,
+//     asset_server: &Res<AssetServer>,
+//     materials: &mut ResMut<Assets<StandardMaterial>>,
+//     face_materials: &mut ResMut<Assets<CelMaterial>>
+// ) {
+//     let face_ent = query.iter().find(|(name, _, _)| name.as_str() == mesh_name);
+//     guard! { let Some((_, face_ent, face_material)) = face_ent else { return } }
+//     guard! { let Some(face_material) = materials.get(face_material) else { return } }
+//     println!("found {:?}", face_ent);
     
-    let material = CelMaterial {
-        diffuse: face_material.base_color_texture.clone(),
-        light_map: Some(asset_server.load(light_map)),
-    };
+//     let material = CelMaterial {
+//         diffuse: face_material.base_color_texture.clone(),
+//         light_map: Some(asset_server.load(light_map)),
+//     };
 
-    let material = face_materials.add(material);
+//     let material = face_materials.add(material);
 
-    commands
-        .entity(face_ent)
-        .remove::<Handle<StandardMaterial>>();
-    commands.entity(face_ent).insert(material);
-}
+//     commands
+//         .entity(face_ent)
+//         .remove::<Handle<StandardMaterial>>();
+//     commands.entity(face_ent).insert(material);
+// }
 
 fn create_cell_materials(
     mut commands: Commands,
@@ -96,8 +109,8 @@ fn create_cell_materials(
 
                 //println!("meshes {:?}", scene.meshes.iter().map(|m| meshes.get(m.1)?.name.clone()).map(|n| n.unwrap_or(String::new())).collect::<Vec<String>>());
                 
-                override_material("Face", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
-                override_material("Face_Eye", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
+                // override_material("Face", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
+                // override_material("Face_Eye", "models/fischl/Avatar_Girl_Tex_FaceLightmap.png", &mut query, &mut commands, &asset_server, &mut materials, &mut face_materials);
 
                 // let face_material = scene.materials.get("FbxMaterial@Avatar_Girl_Bow_FischlCostumeHighness_Mat_Face").unwrap();
                 // let face_material = materials.get_mut(face_material).unwrap();
