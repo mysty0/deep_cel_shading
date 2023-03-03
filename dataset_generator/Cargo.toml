@@ -10,6 +10,13 @@ bevy = "0.9.1"
 bevy_mod_fbx = { path = "./bevy_mod_fbx" }
 bevy_editor_pls = "0.2"
 guard = "0.5.1"
+#fbxcel-dom = "0.0.10"
+fbxcel-dom = { path = "fbxcel-dom" }
+anyhow = "1.0.58"
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
+seq-macro = "0.3"
 
 [profile.dev.package."*"]
 opt-level = 3
