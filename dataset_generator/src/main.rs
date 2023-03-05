@@ -7,12 +7,14 @@ use bevy::{
     reflect::TypeUuid,
     render::render_resource::{AsBindGroup, ShaderRef},
 };
+use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
+use camera_control::{pan_orbit_camera, spawn_camera};
 use fbxcel_dom::v7400::object::{material::MaterialHandle, TypedObjectHandle, texture::TextureHandle};
 use self::material_properties_types::MaterialPropertiesRoot;
 #[macro_use] extern crate guard;
 
 pub mod material_properties_types;
-
+pub mod camera_control;
 
 #[derive(Component)]
 pub struct Spin;
@@ -198,6 +200,7 @@ fn main() {
             watch_for_changes: true,
             ..Default::default()
         }))
+        .add_plugin(DebugLinesPlugin::default())
         .insert_resource(FbxMaterialLoaders::<CelMaterial>(vec![
             &load_cel_material,
             &load_cel_material_fallback
@@ -210,11 +213,20 @@ fn main() {
             MaterialPlugin::<CelMaterial>::default(),
         )
         .add_plugin(CelShaderPlugin)
-        //.add_plugin(EditorPlugin)
+        .add_system(pan_orbit_camera)
+        .add_plugin(EditorPlugin)
         .add_startup_system(setup)
         //.add_system(spin_cube)
         .add_system(create_cell_materials)
+        //.add_system(axis_lines)
         .run();
+}
+
+fn axis_lines(
+    mut lines: ResMut<DebugLines>,
+) {
+    lines.line_colored(Vec3::new(0.0, 1.0, 0.0), Vec3::new(4.0, 1.0, 0.0), 0.0, Color::RED);
+    lines.line_colored(Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 1.0, 4.0), 0.0, Color::BLUE);
 }
 
 fn spin_cube(time: Res<Time>, mut query: Query<&mut Handle<StandardMaterial>, With<Spin>>) {
@@ -345,10 +357,11 @@ fn setup(
         ..default()
     });
     // camera
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-0.5, 1.5, 1.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
-        ..default()
-    });
+    // commands.spawn(Camera3dBundle {
+    //     transform: Transform::from_xyz(-0.5, 1.5, 1.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
+    //     ..default()
+    // });
+    spawn_camera(&mut commands);
 
     let model_bundle = SceneBundle {
         scene: asset_server.load("models/Characters/Faruzan/Avatar_Girl_Bow_Faruzan (merge).fbx#Scene"),
@@ -370,22 +383,7 @@ struct Direction {
 
 impl Default for Direction {
     fn default() -> Self {
-        Self { forward: Default::default(), right: Default::default() }
-    }
-}
-
-#[derive(Debug, Clone, ShaderType)]
-struct Vec5 {
-    v1: f32,
-    v2: f32,
-    v3: f32,
-    v4: f32,
-    v5: f32,
-}
-
-impl From<[f32; 5]> for Vec5 {
-    fn from(value: [f32; 5]) -> Self {
-        Self { v1: value[0], v2: value[1], v3: value[2], v4: value[3], v5: value[4] }
+        Self { forward: Vec3::new(0.0, 0.0, 1.0), right: Vec3::new(-1.0, 0.0, 0.0) }
     }
 }
 
@@ -439,21 +437,67 @@ impl Default for ShadowRamp {
 }
 
 #[derive(Debug, Clone, ShaderType, Default)]
+struct MaterialGlobalSpecular {
+    shininess1: f32,
+    shininess2: f32,
+    shininess3: f32,
+    shininess4: f32,
+    shininess5: f32,
+    specular_multi1: f32,
+    specular_multi2: f32,
+    specular_multi3: f32,
+    specular_multi4: f32,
+    specular_multi5: f32,
+}
+
+#[derive(Debug, Clone, ShaderType, Default)]
 pub struct CelMaterialProperties {
     head_direction: Direction,
+    shadow_ramp_values: ShadowRamp,
+    global_specular: MaterialGlobalSpecular,
+
+    use_materials: Vec4,
+    metal_map_light_color: Color,
+    metal_map_dark_color: Color,
+    metal_map_shadow_multi_color: Color,
+
+    metal_map_sharp_layer_color: Color,
+    metal_map_specular_color: Color,
+
+    specular_color: Color,
+    hit_color: Color,
+
     day_night_cycle: f32,
 
     use_shadow_ramp_texture: f32,
-    shadow_ramp_values: ShadowRamp,
     light_area: f32,
     flip_light_map: f32,
     face_map_softness: f32,
     use_ligth_map_color_ao: f32,
     use_vertex_color_ao: f32,
-    use_materials: Vec4,
+    
     normal_map_scale: f32,
     use_normal_map: f32,
     use_back_space_uv: f32,
+
+    use_metal_map: f32,
+    metal_map_tile_scale: f32,
+    metal_map_brightness: f32,
+    
+
+    metal_map_shininess: f32,
+    metal_map_sharp_layer_offset: f32,
+    
+    metal_map_specular_atten_in_shadow: f32,
+    metal_map_specular_scale: f32,
+
+    use_fresnel: f32,
+    hit_color_fresnel_power: f32,
+    hit_color_scaler: f32,
+
+    rim_light_type: f32,
+    rim_light_intensity: f32,
+    rim_light_thickness: f32,
 }
 
 impl Into<Color> for material_properties_types::Color {
@@ -516,16 +560,44 @@ impl From<MaterialPropertiesRoot> for CelMaterialProperties {
                 transition_softness4: floats.shadow_transition_softness4,
                 transition_softness5: floats.shadow_transition_softness5,
                 
-            }
+            },
+
+            use_metal_map: floats.metal_material,
+            metal_map_tile_scale: floats.mtmap_tile_scale,
+            metal_map_brightness: floats.mtmap_brightness,
+            metal_map_light_color: colors.mtmap_light_color.into(),
+            metal_map_dark_color: colors.mtmap_dark_color.into(),
+            metal_map_shadow_multi_color: colors.mtshadow_multi_color.into(),
+            metal_map_shininess: floats.mtshininess,
+            metal_map_sharp_layer_offset: floats.mtsharp_layer_offset,
+            metal_map_sharp_layer_color: colors.mtsharp_layer_color.into(),
+            metal_map_specular_color: colors.mtspecular_color.into(),
+            metal_map_specular_atten_in_shadow: floats.mtspecular_atten_in_shadow,
+            metal_map_specular_scale: floats.mtspecular_scale,
+            global_specular: MaterialGlobalSpecular { 
+                shininess1: floats.shininess, 
+                shininess2: floats.shininess2, 
+                shininess3: floats.shininess3, 
+                shininess4: floats.shininess4, 
+                shininess5: floats.shininess5, 
+                specular_multi1: floats.spec_multi, 
+                specular_multi2: floats.spec_multi2, 
+                specular_multi3: floats.spec_multi3, 
+                specular_multi4: floats.spec_multi4, 
+                specular_multi5: floats.spec_multi5 
+            },
+            specular_color: colors.specular_color.into(),
+            hit_color: colors.hit_color.into(),
+            use_fresnel: 1.0,
+            hit_color_fresnel_power: floats.hit_color_fresnel_power,
+            hit_color_scaler: floats.hit_color_scaler,
+            rim_light_type: 1.0,
+            rim_light_intensity: 1.0,
+            rim_light_thickness: 1.0,
         }
     }
 }
 
-fn bool_to_f32(value: bool) -> f32 {
-    if value { 1.0 } else { 0.0 }
-}
-
-// This is the struct that will be passed to your shader
 #[derive(AsBindGroup, TypeUuid, Debug, Clone, Default)]
 #[uuid = "f690fdae-d598-45ab-8225-97e2a3406028"]
 #[bind_group_data(CelMaterialKey)]

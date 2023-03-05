@@ -69,13 +69,41 @@ fn get_shadow_ramp_value(ramp: ShadowRamp, index: i32) -> ShadowRampValue {
     return value;
 }
 
+struct GlobalSpecular {
+    shininess1: f32,
+    shininess2: f32,
+    shininess3: f32,
+    shininess4: f32,
+    shininess5: f32,
+    specular_multi1: f32,
+    specular_multi2: f32,
+    specular_multi3: f32,
+    specular_multi4: f32,
+    specular_multi5: f32,
+}
+
+struct GlobalSpecularValue {
+    shininess: f32,
+    specular_multi: f32,
+}
+
 struct MaterialProperties {
     head_direction: Direction,
+    shadow_ramp_values: ShadowRamp,
+    global_specular: GlobalSpecular,
+
+    use_materials: vec4<f32>, //1 1 1 1 1
+    metal_map_light_color: vec4<f32>,
+    metal_map_dark_color: vec4<f32>,
+    metal_map_shadow_multi_color: vec4<f32>,
+    metal_map_sharp_layer_color: vec4<f32>,
+    metal_map_specular_color: vec4<f32>,
+    specular_color: vec4<f32>,
+    hit_color: vec4<f32>,
 
     day_night_cycle: f32,
 
     use_shadow_ramp_texture: f32,
-    shadow_ramp_values: ShadowRamp,
 
     light_area: f32, //0.55
     flip_light_map: f32, //0
@@ -84,13 +112,29 @@ struct MaterialProperties {
     use_ligth_map_color_ao: f32, //1
     use_vertex_color_ao: f32, //1
 
-    use_materials: vec4<f32>, //1 1 1 1 1
-
     normal_map_scale: f32, //0.2
 
     use_normal_map: f32, //1
 
     use_back_space_uv: f32, //1
+
+    use_metal_map: f32,
+    metal_map_tile_scale: f32,
+    metal_map_brightness: f32,
+
+    metal_map_shininess: f32,
+    metal_map_sharp_layer_offset: f32,
+    
+    metal_map_specular_atten_in_shadow: f32,
+    metal_map_specular_scale: f32,
+
+    use_fresnel: f32,
+    hit_color_fresnel_power: f32,
+    hit_color_scaler: f32,
+
+    rim_light_type: f32,
+    rim_light_intensity: f32,
+    rim_light_thickness: f32,
 }
 
 @group(1) @binding(0)
@@ -126,6 +170,29 @@ var metal_map_sampler: sampler;
 @group(1) @binding(12)
 var<uniform> properties: MaterialProperties;
 
+fn get_specular_value(material_id: i32) -> GlobalSpecularValue {
+    let gs = properties.global_specular;
+    var value = GlobalSpecularValue(gs.shininess1, gs.specular_multi1);
+    if material_id == 2 {
+        value.shininess = gs.shininess2;
+        value.specular_multi = gs.specular_multi2;
+    }
+    if material_id == 3 {
+        value.shininess = gs.shininess3;
+        value.specular_multi = gs.specular_multi3;
+    }
+    if material_id == 4 {
+        value.shininess = gs.shininess4;
+        value.specular_multi = gs.specular_multi4;
+    }
+    if material_id == 5 {
+        value.shininess = gs.shininess5;
+        value.specular_multi = gs.specular_multi5;
+    }
+
+    return value;
+}
+
 // @group(1) @binding(25)
 // var<uniform> use_metal_material: f32; //1
 // @group(1) @binding(25)
@@ -147,6 +214,10 @@ fn saturate(value: f32) -> f32 {
     return clamp(value,0.0,1.0);
 }
 
+fn saturate4(value: vec4<f32>) -> vec4<f32> {
+    return clamp(value, vec4<f32>(0.0), vec4<f32>(1.0));
+}
+
 fn calculate_view(
     world_position: vec4<f32>,
 ) -> vec3<f32> {
@@ -156,6 +227,17 @@ fn calculate_view(
 fn texel_size(texture: texture_2d<f32>) -> vec4<f32> {
     let size = vec2<f32>(textureDimensions(texture));
     return vec4<f32>(1.0/size.x, 1.0/size.y, size);
+}
+
+fn shadow_ramp_face(material_id: i32, factor: f32) -> vec4<f32> {
+    if properties.use_shadow_ramp_texture > 0.0 {
+        let day = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05));
+        let night = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05 + 0.5));
+
+        return mix(day, night, properties.day_night_cycle);
+    } else {
+        return mix(properties.shadow_ramp_values.day_mult_colors[0], properties.shadow_ramp_values.day_mult_colors[0], properties.day_night_cycle);
+    }
 }
 
 fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multiplier: f32) -> vec4<f32> {
@@ -175,6 +257,7 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         let lit_factor = factor < properties.light_area;
 
         let factor = 1.0 - ((properties.light_area - factor) / properties.light_area) / width;
+        let factor = saturate(factor);
 
         let day = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05));
         let night = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05 + 0.5));
@@ -184,7 +267,7 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         // switch between 1 and ramp edge like how the game does it, also make eyes always lit
         //ShadowFinal = (litFactor && lightmapTex.g < 0.95) ? ShadowFinal : 1;
 
-        return mix(shadow, vec4<f32>(1.0), factor);
+        return select(vec4<f32>(1.0), mix(shadow, vec4<f32>(1.0), factor), lit_factor);
     } else {
         let factor = (factor + occlusion) * 0.5;
         let factor = select(factor, 1.0, occlusion > 0.95);
@@ -230,7 +313,8 @@ fn face_color(uv: vec2<f32>, vertex_color: vec4<f32>, world_normal: vec3<f32>, l
     let forward_light = dot(light_2d, properties.head_direction.forward.xz);
     // remap both dot products from { -1, 1 } to { 0, 1 } and invert
     let forward_light = 1.0 - (forward_light * 0.5 + 0.5);
-    
+    //let forward_light = (forward_light * 0.5 + 0.5);
+
     let right_light = dot(light_2d, properties.head_direction.right.xz);
     let right_light = select(1.0 - (right_light * 0.5 + 0.5), right_light * 0.5 + 0.5, properties.flip_light_map > 0.0);
 
@@ -248,35 +332,11 @@ fn face_color(uv: vec2<f32>, vertex_color: vec4<f32>, world_normal: vec3<f32>, l
     //let smooth_light = smoothstep(0.0, light_smooth, light);
 
     let occlusion = select(0.5, face_map.g, properties.use_ligth_map_color_ao > 0.0) * select(1.0, vertex_color.r, properties.use_vertex_color_ao > 0.0);
-    let shadow = shadow_ramp(4, face_light, occlusion, vertex_color.g);
+    //let shadow = shadow_ramp_face(1, face_light);
+    let shadow = shadow_ramp(2, face_light, occlusion/2.0, vertex_color.g);
+    //let shadow = mix(shadow, vec4<f32>(1.0), face_light);
 
-    // create metal factor to be used later
-    // let metalFactor = (light_map.r > 0.9) * _MetalMaterial;
-
-    //     // multiply world space normals with view matrix
-    //     vector<half, 3> viewNormal = mul(UNITY_MATRIX_V, modifiedNormalsWS);
-    //     // https://github.com/poiyomi/PoiyomiToonShader/blob/master/_PoiyomiShaders/Shaders/8.0/Poiyomi.shader#L8397
-    //     // this part (all 5 lines) i literally do not understand but it fixes the skewing that occurs when the camera 
-    //     // views the mesh at the edge of the screen (PLEASE LET ME GO BACK TO BLENDER)
-    //     vector<half, 3> matcapUV_Detail = viewNormal.xyz * vector<half, 3>(-1, -1, 1);
-    //     vector<half, 3> matcapUV_Base = (mul(UNITY_MATRIX_V, vector<half, 4>(viewDir, 0)).rgb 
-    //                                     * vector<half, 3>(-1, -1, 1)) + vector<half, 3>(0, 0, 1);
-    //     vector<half, 3> matcapUVs = matcapUV_Base * dot(matcapUV_Base, matcapUV_Detail) 
-    //                                 / matcapUV_Base.z - matcapUV_Detail;
-
-    //     // offset UVs to middle and apply _MTMapTileScale
-    //     matcapUVs = vector<half, 3>(matcapUVs.x * _MTMapTileScale, matcapUVs.y, 0) * 0.5 + vector<half, 3>(0.5, 0.5, 0);
-
-    //     // sample matcap texture with newly created UVs
-    //     metal = _MTMap.Sample(sampler_MTMap, matcapUVs);
-    //     // prevent metallic matcap from glowing
-    //     metal = saturate(metal * _MTMapBrightness);
-    //     metal = lerp(_MTMapDarkColor, _MTMapLightColor, metal);
-
-    //     // apply _MTShadowMultiColor ONLY to shaded areas
-    //     metal = lerp(metal * _MTShadowMultiColor, metal, saturate(NdotL_buf));
-
-    return color * shadow;
+    return color *shadow;//color * shadow;//vec4<f32>(face_light);//
 }
 
 fn standart_cel_color(
@@ -372,8 +432,8 @@ fn standart_cel_color(
     let light = light * 0.5 + 0.5;
 
     //specular
-    let view = calculate_view(world_position);
-    let light_pos = normalize(light_position + view);
+    let view_postion = calculate_view(world_position);
+    let light_pos = normalize(light_position + view_postion);
     let metal_specular = dot(normal, light_pos);
     
     let occlusion = select(0.5, light_map.g, properties.use_ligth_map_color_ao > 0.0) * select(1.0, vertex_color.r, properties.use_vertex_color_ao > 0.0);
@@ -384,8 +444,54 @@ fn standart_cel_color(
         occlusion, 
         vertex_color.g
     );
+
+    let metal_factor = f32(light_map.r > 0.9) * properties.use_metal_map;
+    let view_normal = view.view * vec4<f32>(normal, 1.0);
+    // https://github.com/poiyomi/PoiyomiToonShader/blob/master/_PoiyomiShaders/Shaders/8.0/Poiyomi.shader#L8397
+    let matcapuv_detail = view_normal.xyz * vec3<f32>(-1.0, -1.0, 1.0);
+    let matcapuv_base = (view.view * vec4<f32>(view_postion, 1.0)).xyz * vec3<f32>(-1.0, -1.0, 1.0) + vec3<f32>(0.0, 0.0, 1.0);
+    let matcapuvs = matcapuv_base * dot(matcapuv_base, matcapuv_detail) / matcapuv_base.z - matcapuv_detail;
+
+    // offset UVs to middle and apply _MTMapTileScale
+    let matcapuvs = vec2<f32>(matcapuvs.x * properties.metal_map_tile_scale, matcapuvs.y) * 0.5 + vec2<f32>(0.5, 0.5);
+
+    // sample matcap texture with newly created UVs
+    let metal = textureSample(metal_map_tex, metal_map_sampler, matcapuvs);
     
-    return color * shadow;// * light;
+    // prevent metallic matcap from glowing
+    let metal = saturate4(metal * properties.metal_map_brightness);
+    let metal = mix(properties.metal_map_dark_color, properties.metal_map_light_color, metal);
+    
+    // apply _MTShadowMultiColor ONLY to shaded areas
+    let metal = mix(metal * properties.metal_map_shadow_multi_color, metal, saturate(light));
+
+    let specular_light_dir = normalize(view_postion + light_position);
+    let specular_light = dot(normal, specular_light_dir);
+    let metal_specular = saturate(pow(specular_light, properties.metal_map_shininess) * properties.metal_map_specular_scale);
+    var metal_specular_color = vec4<f32>(metal_specular);
+    if properties.metal_map_sharp_layer_offset < metal_specular {
+        metal_specular_color = properties.metal_map_sharp_layer_color;
+    } else {
+        metal_specular_color *= properties.metal_map_specular_color;
+        metal_specular_color *= light_map.z;
+    }
+
+    // apply _MTSpecularAttenInShadow ONLY to shaded areas
+    metal_specular_color = mix(metal_specular_color * properties.metal_map_specular_atten_in_shadow, vec4<f32>(metal_specular), saturate(light));
+
+    let specular_value = get_specular_value(material_id);
+    let specular = pow(specular_light, specular_value.shininess);
+    let specular = f32((1.0 - light_map.b) < specular);
+    let specular = saturate4(properties.specular_color * vec4<f32>(specular * specular_value.specular_multi * light_map.r));
+    
+    var color = color.xyz;
+    if metal_factor > 0.0 {
+        color = color * metal.xyz + metal_specular_color.xyz; 
+    } else {
+        color = color * shadow.xyz + specular.xyz;
+    }
+
+    return vec4<f32>(color, 1.0);// * light;
 }
 
 
@@ -508,8 +614,12 @@ fn fragment(
 ) -> @location(0) vec4<f32> {
 
   //  let light_smooth = 0.1;
+    
+    //let light = vec3<f32>(-4.0, -8.0, 4.0);
+    //let light_dir = light - world_position.xyz;
+    //let light_dir = normalize(light_dir);
 
-    let light = vec3<f32>(4.0, 8.0, 4.0);
+    let light = point_lights.data[0].position_radius.xyz;
     let light_dir = light - world_position.xyz;
     let light_dir = normalize(light_dir);
 
@@ -539,7 +649,31 @@ fn fragment(
     );
 #endif
 
-    return color;
+    //todo: use modified normal
+    let frensel = vec3<f32>(inverseSqrt(dot(world_normal, world_normal))) * world_normal;
+
+    //todo: double check if its right view direction
+    let view_postion = calculate_view(world_position);
+    let frensel_factor = 1.0 - saturate(dot(frensel, view_postion));
+    let frensel_factor = max(frensel_factor, 9.99999975e-05);
+    let frensel_factor = pow(frensel_factor, properties.hit_color_fresnel_power);
+
+    let fresnel = properties.hit_color.xyz * vec3<f32>(frensel_factor * properties.hit_color_scaler);
+
+    //  half rimLight = calculateRimLight(i.normal, i.screenPos, _RimLightIntensity, 
+    //                                   _RimLightThickness, 1.0 - litFactor);
+
+    // // rim light mustn't appear in backfaces
+    // rimLight *= frontFacing;
+
+    var color = color.xyz;
+
+    color += f32(properties.use_fresnel != 0.0) * fresnel;
+
+    // apply rim light
+    //color.xyz = (_RimLightType != 0) ? ColorDodge(rimLight, finalColor.xyz) : finalColor.xyz + rimLight;
+
+    return vec4<f32>(color, 1.0);
     // #ifndef FACE
     // return vec4<f32>(normal_map_uv.x, normal_map_uv.y, 1.0, 1.0);
     // #else
