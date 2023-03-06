@@ -243,6 +243,7 @@ impl From<material_properties_types::MaterialPropertiesRoot> for CelMaterialProp
 #[bind_group_data(CelMaterialKey)]
 pub struct CelMaterial {
     pub is_face: bool,
+    pub diffuse_only: bool,
     #[texture(0)]
     #[sampler(1)]
     diffuse: Option<Handle<Image>>,
@@ -277,6 +278,7 @@ impl CelMaterial {
     ) -> Self {
         Self {
             is_face: false,
+            diffuse_only: false,
             diffuse: Some(diffuse),
             light_map: Some(light_map),
             metal_map: Some(metal_map),
@@ -297,6 +299,7 @@ impl CelMaterial {
     ) -> Self {
         Self {
             is_face: true,
+            diffuse_only: false,
             diffuse: Some(diffuse),
             face_light_map: Some(face_light_map),
             metal_map: Some(metal_map),
@@ -311,12 +314,14 @@ impl CelMaterial {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CelMaterialKey {
     is_face: bool,
+    diffuse_only: bool,
 }
 
 impl From<&CelMaterial> for CelMaterialKey {
     fn from(material: &CelMaterial) -> Self {
         CelMaterialKey {
             is_face: material.is_face,
+            diffuse_only: material.diffuse_only,
         }
     }
 }
@@ -358,10 +363,13 @@ impl Material for CelMaterial {
             Mesh::ATTRIBUTE_TANGENT.at_shader_location(2),
             Mesh::ATTRIBUTE_UV_0.at_shader_location(3),
             Mesh::ATTRIBUTE_COLOR.at_shader_location(4),
-            //Mesh::ATTRIBUTE_UV_0.at_shader_location(5)
         ];
 
         let mut shader_defs = Vec::new();
+
+        if key.bind_group_data.diffuse_only {
+            shader_defs.push("SIMPLE".into());
+        }
 
         if key.bind_group_data.is_face {
             shader_defs.push("FACE".into());
@@ -385,6 +393,8 @@ impl Material for CelMaterial {
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader_defs.extend(shader_defs);
         }
+
+        descriptor.primitive.cull_mode = None;
 
         Ok(())
     }

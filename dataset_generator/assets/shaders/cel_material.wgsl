@@ -613,6 +613,10 @@ fn fragment(
 #endif
 ) -> @location(0) vec4<f32> {
 
+#ifdef SIMPLE
+    return textureSample(diffuse_tex, diffuse_sampler, uv);
+#else //SIMPLE
+
   //  let light_smooth = 0.1;
     
     //let light = vec3<f32>(-4.0, -8.0, 4.0);
@@ -625,12 +629,12 @@ fn fragment(
 
 #ifdef FACE
     let color = face_color(uv, color, world_normal, light_dir);
-#else
+#else //FACE
 
     // let world_tangent = vec4<f32>();
 #ifndef VERTEX_COLORS
     let color = vec4<f32>();
-#endif
+#endif //VERTEX_COLORS
 
     // let is_front = true;
     // let frag_coord = vec4<f32>();
@@ -647,7 +651,7 @@ fn fragment(
         is_front,
         frag_coord
     );
-#endif
+#endif //FACE
 
     //todo: use modified normal
     let frensel = vec3<f32>(inverseSqrt(dot(world_normal, world_normal))) * world_normal;
@@ -680,6 +684,7 @@ fn fragment(
 
     // return vec4<f32>(uv.x, uv.y, 1.0, 1.0);//vec4<f32>(color.x, color.y, color.z, 1.0f);
     // #endif
+#endif //SIMPLE
 }
 
-#endif
+#endif //EMPTY
