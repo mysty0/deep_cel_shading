@@ -19,12 +19,24 @@ pub struct Direction {
     right: Vec3,
 }
 
+const FORWARD_VEC: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+const RIGHT_VEC: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
+
 impl Default for Direction {
     fn default() -> Self {
         Self {
-            forward: Vec3::new(0.0, 0.0, 1.0),
-            right: Vec3::new(-1.0, 0.0, 0.0),
+            forward: FORWARD_VEC,
+            right: RIGHT_VEC,
         }
+    }
+}
+
+impl From<Quat> for Direction {
+    fn from(quat: Quat) -> Self {
+        return Direction {
+            forward: quat * FORWARD_VEC,
+            right: quat * RIGHT_VEC,
+        };
     }
 }
 
@@ -294,7 +306,7 @@ impl CelMaterial {
         face_light_map: Handle<Image>,
         light_map: Handle<Image>,
         metal_map: Handle<Image>,
-        shadow_ramp: Handle<Image>,
+        shadow_ramp: Option<Handle<Image>>,
         properties: CelMaterialProperties,
     ) -> Self {
         Self {
@@ -304,10 +316,14 @@ impl CelMaterial {
             face_light_map: Some(face_light_map),
             metal_map: Some(metal_map),
             light_map: Some(light_map),
-            shadow_ramp: Some(shadow_ramp),
+            shadow_ramp: shadow_ramp,
             normal_map: None,
             properties,
         }
+    }
+
+    pub fn update_head_direction(&mut self, head_direction: Direction) {
+        self.properties.head_direction = head_direction;
     }
 }
 
@@ -377,8 +393,10 @@ impl Material for CelMaterial {
             // if !layout.contains(ATTRIBUTE_NORMAL_MAP_UV) {
 
             // }
-            vertex_attributes.push(ATTRIBUTE_NORMAL_MAP_UV.at_shader_location(5));
-            shader_defs.push("VERTEX_NORMAL_MAP_UV".into());
+            if layout.contains(ATTRIBUTE_NORMAL_MAP_UV) {
+                vertex_attributes.push(ATTRIBUTE_NORMAL_MAP_UV.at_shader_location(5));
+                shader_defs.push("VERTEX_NORMAL_MAP_UV".into());
+            }
             println!(
                 "has normal map uv {}",
                 layout.contains(ATTRIBUTE_NORMAL_MAP_UV)

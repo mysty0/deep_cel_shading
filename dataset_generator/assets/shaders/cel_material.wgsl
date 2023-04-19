@@ -42,13 +42,13 @@ fn get_shadow_ramp_value(ramp: ShadowRamp, index: i32) -> ShadowRampValue {
     );
 
     if index == 2 {
-        value.day_mult_color = ramp.day_mult_colors[0];
-        value.night_mult_color = ramp.night_mult_colors[0];
+        value.day_mult_color = ramp.day_mult_colors[1];
+        value.night_mult_color = ramp.night_mult_colors[1];
         value.transition_range = ramp.transition_range2;
         value.transition_softness = ramp.transition_softness2;
     }
     if index == 3 {
-        value.day_mult_color = ramp.day_mult_colors[1];
+        value.day_mult_color = ramp.day_mult_colors[2];
         value.night_mult_color = ramp.night_mult_colors[2];
         value.transition_range = ramp.transition_range3;
         value.transition_softness = ramp.transition_softness3;
@@ -236,7 +236,11 @@ fn shadow_ramp_face(material_id: i32, factor: f32) -> vec4<f32> {
 
         return mix(day, night, properties.day_night_cycle);
     } else {
-        return mix(properties.shadow_ramp_values.day_mult_colors[0], properties.shadow_ramp_values.day_mult_colors[0], properties.day_night_cycle);
+        return mix(
+            properties.shadow_ramp_values.day_mult_colors[material_id], 
+            properties.shadow_ramp_values.night_mult_colors[material_id], 
+            properties.day_night_cycle
+        );
     }
 }
 
@@ -257,9 +261,9 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         let lit_factor = factor < properties.light_area;
 
         let factor = 1.0 - ((properties.light_area - factor) / properties.light_area) / width;
-        let factor = saturate(factor);
+        let factor = clamp(factor - 0.5, 0.001, 0.999);
 
-        let day = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05));
+        let day = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(4))) * 0.1) + 0.05));
         let night = textureSample(shadow_ramp_tex, shadow_ramp_sampler, vec2<f32>(factor, (((6.0 - f32(material_id)) - 1.0) * 0.1) + 0.05 + 0.5));
 
         let shadow = mix(day, night, properties.day_night_cycle);
@@ -267,7 +271,7 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         // switch between 1 and ramp edge like how the game does it, also make eyes always lit
         //ShadowFinal = (litFactor && lightmapTex.g < 0.95) ? ShadowFinal : 1;
 
-        return select(vec4<f32>(1.0), mix(shadow, vec4<f32>(1.0), factor), lit_factor);
+        return shadow;//select(vec4<f32>(1.0), mix(shadow, vec4<f32>(1.0), factor), lit_factor);//vec4<f32>(factor);//
     } else {
         let factor = (factor + occlusion) * 0.5;
         let factor = select(factor, 1.0, occlusion > 0.95);
@@ -324,7 +328,7 @@ fn face_color(uv: vec2<f32>, vertex_color: vec4<f32>, world_normal: vec3<f32>, l
     let shadow_range = min(0.999, forward_light);
     let shadow_range = pow(shadow_range, pow((2.0 - (properties.light_area + 0.50)), 3.0));
 
-    let face_light = smoothstep(shadow_range - properties.face_map_softness, shadow_range + properties.face_map_softness, light_map_dir.r);
+    let face_light = smoothstep(shadow_range - properties.face_map_softness, shadow_range + properties.face_map_softness, light_map_dir.w);
     let face_light = face_light + face_map.w * (1.0 - forward_light);
     let lit_factor = 1.0 - face_light;
 
@@ -332,11 +336,11 @@ fn face_color(uv: vec2<f32>, vertex_color: vec4<f32>, world_normal: vec3<f32>, l
     //let smooth_light = smoothstep(0.0, light_smooth, light);
 
     let occlusion = select(0.5, face_map.g, properties.use_ligth_map_color_ao > 0.0) * select(1.0, vertex_color.r, properties.use_vertex_color_ao > 0.0);
-    //let shadow = shadow_ramp_face(1, face_light);
-    let shadow = shadow_ramp(2, face_light, occlusion/2.0, vertex_color.g);
-    //let shadow = mix(shadow, vec4<f32>(1.0), face_light);
+    let shadow = shadow_ramp_face(2, face_light);
+    //let shadow = shadow_ramp(1, face_light, occlusion/2.0, vertex_color.g);
+    let shadow = mix(shadow, vec4<f32>(1.0), face_light);
 
-    return color *shadow;//color * shadow;//vec4<f32>(face_light);//
+    return color * shadow;//color * shadow;//vec4<f32>(face_light);//
 }
 
 fn standart_cel_color(
@@ -432,8 +436,8 @@ fn standart_cel_color(
     let light = light * 0.5 + 0.5;
 
     //specular
-    let view_postion = calculate_view(world_position);
-    let light_pos = normalize(light_position + view_postion);
+    let view_direction = calculate_view(world_position);
+    let light_pos = normalize(light_position + view_direction);
     let metal_specular = dot(normal, light_pos);
     
     let occlusion = select(0.5, light_map.g, properties.use_ligth_map_color_ao > 0.0) * select(1.0, vertex_color.r, properties.use_vertex_color_ao > 0.0);
@@ -446,11 +450,22 @@ fn standart_cel_color(
     );
 
     let metal_factor = f32(light_map.r > 0.9) * properties.use_metal_map;
-    let view_normal = view.view * vec4<f32>(normal, 1.0);
+    let view_normal = view.view * vec4<f32>(normal, 0.0);
     // https://github.com/poiyomi/PoiyomiToonShader/blob/master/_PoiyomiShaders/Shaders/8.0/Poiyomi.shader#L8397
-    let matcapuv_detail = view_normal.xyz * vec3<f32>(-1.0, -1.0, 1.0);
-    let matcapuv_base = (view.view * vec4<f32>(view_postion, 1.0)).xyz * vec3<f32>(-1.0, -1.0, 1.0) + vec3<f32>(0.0, 0.0, 1.0);
-    let matcapuvs = matcapuv_base * dot(matcapuv_base, matcapuv_detail) / matcapuv_base.z - matcapuv_detail;
+    // let matcapuv_detail = view_normal.xyz * vec3<f32>(-1.0, -1.0, 1.0);
+    // let matcapuv_base = (view.view * vec4<f32>(view_direction, 0.0)).xyz * vec3<f32>(-1.0, -1.0, 1.0) + vec3<f32>(0.0, 0.0, 1.0);
+    // let matcapuvs = matcapuv_base * dot(matcapuv_base, matcapuv_detail) / matcapuv_base.z - matcapuv_detail;
+    // let tangent : vec3<f32> = normalize(cross(normal, vec3<f32>(0.0, 0.0, 1.0)));
+    // let bitangent : vec3<f32> = cross(normal, tangent);
+    // let TBN : mat3x3<f32> = mat3x3<f32>(tangent, bitangent, normal);
+    // let matcapuvs : vec2<f32> = (TBN * normal.xyz).xy * 0.5 + vec2<f32>(0.5, 0.5);
+
+    //let view_normal = 
+    //let matcapuvs = vec2<f32>();
+
+    let matcapuvs = vec2<f32>(dot(vec4(world_normal, 1.0), view.view[0]), dot(vec4(world_normal, 1.0), view.view[1]));
+    //normalize [-1; 1] -> [0; 1]
+    let matcapuvs = (matcapuvs + 1.0)/2.0;
 
     // offset UVs to middle and apply _MTMapTileScale
     let matcapuvs = vec2<f32>(matcapuvs.x * properties.metal_map_tile_scale, matcapuvs.y) * 0.5 + vec2<f32>(0.5, 0.5);
@@ -465,8 +480,8 @@ fn standart_cel_color(
     // apply _MTShadowMultiColor ONLY to shaded areas
     let metal = mix(metal * properties.metal_map_shadow_multi_color, metal, saturate(light));
 
-    let specular_light_dir = normalize(view_postion + light_position);
-    let specular_light = dot(normal, specular_light_dir);
+   // let specular_light_dir = normalize(view_direction + light_position);
+    let specular_light = dot(normal, light_pos);
     let metal_specular = saturate(pow(specular_light, properties.metal_map_shininess) * properties.metal_map_specular_scale);
     var metal_specular_color = vec4<f32>(metal_specular);
     if properties.metal_map_sharp_layer_offset < metal_specular {
@@ -608,13 +623,17 @@ fn fragment(
 #ifdef VERTEX_COLORS
     @location(4) color: vec4<f32>,
 #endif
-#ifndef FACE
+#ifdef VERTEX_NORMAL_MAP_UV
     @location(5) normal_map_uv: vec2<f32>,
 #endif
 ) -> @location(0) vec4<f32> {
 
+    let light = point_lights.data[0].position_radius.xyz;
+    let light_dir = light - world_position.xyz;
+    let light_dir = normalize(light_dir);
+
 #ifdef SIMPLE
-    return textureSample(diffuse_tex, diffuse_sampler, uv);
+    return textureSample(diffuse_tex, diffuse_sampler, uv) * max(0.2, dot(light_dir, world_normal));
 #else //SIMPLE
 
   //  let light_smooth = 0.1;
@@ -623,9 +642,7 @@ fn fragment(
     //let light_dir = light - world_position.xyz;
     //let light_dir = normalize(light_dir);
 
-    let light = point_lights.data[0].position_radius.xyz;
-    let light_dir = light - world_position.xyz;
-    let light_dir = normalize(light_dir);
+    
 
 #ifdef FACE
     let color = face_color(uv, color, world_normal, light_dir);
@@ -639,6 +656,10 @@ fn fragment(
     // let is_front = true;
     // let frag_coord = vec4<f32>();
     // let normal_map_uv = vec2<f32>();
+
+#ifndef VERTEX_NORMAL_MAP_UV
+    let normal_map_uv = vec2<f32>();
+#endif
 
     let color = standart_cel_color(
         world_position, 

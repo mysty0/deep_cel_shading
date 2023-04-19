@@ -5,10 +5,15 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["ui"]
+ui = ["dep:bevy_editor_pls", "dep:bevy_egui"]
+screenshot = []
+
 [dependencies]
-bevy = { version = "0.9.1", features = ["serialize"] } #version = "0.9.1"
+bevy = { version = "0.9", features = ["serialize"] } #version = "0.9.1"
 bevy_mod_fbx = { path = "./bevy_mod_fbx" }
-bevy_editor_pls = "0.2"
+bevy_editor_pls = { version = "0.2", optional = true }
 guard = "0.5.1"
 #fbxcel-dom = "0.0.10"
 fbxcel-dom = { path = "fbxcel-dom" }
@@ -16,15 +21,15 @@ anyhow = "1.0.58"
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
-bevy_prototype_debug_lines = { version = "0.9", features = ["3d"] }
-bevy_egui = "0.19"
+#bevy_prototype_debug_lines = { version = "0.9", features = ["3d"] }
+bevy_egui = { version = "0.19", optional = true }
 ron = "0.8.0"
-bevy_asset_loader = { path = "./bevy_asset_loader/bevy_asset_loader", features = ["progress_tracking"] }#version = "0.14.1"
 bevy_common_assets = { version = "0.4.0", features = ["ron"] }
-iyes_progress = "0.7.1"
+rand = "0.8.5"
+lazy_static = "1.4.0"
 
 [profile.dev.package."*"]
 opt-level = 3
 
-[patch.crates-io]
-bevy = { path = "./bevy" }
+#[patch.crates-io]
+#bevy = { path = "bevy" }

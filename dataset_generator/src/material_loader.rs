@@ -1,7 +1,11 @@
 use std::path::Path;
 
 use crate::{cel_material::CelMaterial, material_properties_types::MaterialPropertiesRoot};
-use bevy::{asset::LoadedAsset, prelude::*, render::texture::ImageType, utils::BoxedFuture};
+use anyhow::Context;
+use bevy::{
+    asset::LoadedAsset, prelude::*, reflect::GetPath, render::texture::ImageType,
+    utils::BoxedFuture,
+};
 use bevy_mod_fbx::material_loader::TextureLoader;
 use bevy_mod_fbx::utils::fbx_extend::MaterialHandleExt;
 use fbxcel_dom::v7400::object::{
@@ -30,59 +34,66 @@ async fn load_texture<'a, 'w>(
     let texture = find_texture(material_obj, &name);
 
     if let Some(texture) = texture {
-        texture_loader
+        let tex = texture_loader
             .get_cached_texture(texture)
             .await
-            .map(|h| Some(h))
-    } else {
-        println!("{} not found in fbx, trying to find in folder", &name);
+            .map(|h| Some(h));
 
-        let parent = texture_loader.load_context.path().parent().unwrap();
-        let name = format!("{name}.png");
-        let file = texture_loader
-            .load_context
-            .asset_io()
-            .read_directory(parent)?
-            .find(|f| f.ends_with(&name));
-
-        guard! { let Some(file) = file else {
-            println!("{} not found in folder as well", name);
-            texture_loader.load_context
-            .asset_io()
-            .read_directory(texture_loader.load_context.path().parent().unwrap())?
-            .for_each(|f| println!("{:?}", f));
-
-            return Ok(None)
-        } }
-
-        let image_path = Path::new(&file); //parent.join(&file);
-        let image = texture_loader
-            .load_context
-            .read_asset_bytes(image_path)
-            .await?;
-
-        let file_ext = Path::new(&file)
-            .extension()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_ascii_lowercase();
-
-        let is_srgb = false; // TODO
-        let image = Image::from_buffer(
-            &image,
-            ImageType::Extension(&file_ext),
-            texture_loader.suported_compressed_formats,
-            is_srgb,
-        )?;
-
-        let handle = texture_loader
-            .load_context
-            .set_labeled_asset(&name, LoadedAsset::new(image));
-
-        Ok(Some(handle))
+        if tex.is_ok() {
+            return tex;
+        }
     }
+
+    println!("{} not found in fbx, trying to find in folder", &name);
+
+    let parent = texture_loader.load_context.path().parent().unwrap();
+    let name = format!("{name}.png");
+    let file = texture_loader
+        .load_context
+        .asset_io()
+        .read_directory(parent)?
+        .find(|f| f.ends_with(&name));
+
+    guard! { let Some(file) = file else {
+        println!("{} not found in folder as well", name);
+        texture_loader.load_context
+        .asset_io()
+        .read_directory(texture_loader.load_context.path().parent().unwrap())?
+        .for_each(|f| println!("{:?}", f));
+
+        return Ok(None)
+    } }
+
+    let image_path = Path::new(&file); //parent.join(&file);
+    let image = texture_loader
+        .load_context
+        .read_asset_bytes(image_path)
+        .await?;
+
+    let file_ext = Path::new(&file)
+        .extension()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+
+    let is_srgb = false; // TODO
+    let image = Image::from_buffer(
+        &image,
+        ImageType::Extension(&file_ext),
+        texture_loader.suported_compressed_formats,
+        is_srgb,
+    )?;
+
+    let handle = texture_loader
+        .load_context
+        .set_labeled_asset(&name, LoadedAsset::new(image));
+
+    Ok(Some(handle))
 }
+
+//Avatar_Girl_Catalyst_BarbaraCostumeSummertime_Tex_Body_Shadow_Ramp.png
+//Avatar_Girl_Catalyst_BarbaraCostumeSummertime_Tex_Hair_Shadow_Ramp.png
 
 pub fn load_cel_material<'a, 'w>(
     texture_loader: &'a mut TextureLoader<'a, 'w>,
@@ -106,13 +117,18 @@ pub fn load_cel_material<'a, 'w>(
         let tokens = name.split('_').collect();
 
         macro_rules! load_optional_map {
-            ($name: expr, $ind: expr) => {
-                load_texture(texture_loader, &material_obj, &tokens, $ind, $name).await?
+            ($name: literal, $ind: expr) => {
+                load_texture(texture_loader, &material_obj, &tokens, $ind, $name)
+                    .await
+                    .inspect_err(|e| println!("Error while loading tex {:?}", e))
+                    .ok()
+                    .flatten()
+                //.context(concat!("Unable to load fbx map ", $name))?
             };
         }
 
         macro_rules! load_map {
-            ($name: expr, $ind: expr) => {
+            ($name: literal, $ind: expr) => {
                 if let Some(map) = load_optional_map!($name, $ind) {
                     map
                 } else {
@@ -124,11 +140,21 @@ pub fn load_cel_material<'a, 'w>(
 
         println!("{:?}", texture_loader.load_context.path());
 
-        let diffuse = texture_loader.get_cached_texture(diffuse).await?;
+        let diffuse = {
+            let diffuse = texture_loader.get_cached_texture(diffuse).await;
+            if let Ok(diffuse) = diffuse {
+                diffuse
+            } else {
+                load_map!("Diffuse", 6)
+            }
+        };
 
         let parent = texture_loader.load_context.path().parent().unwrap();
 
-        let single_model = true; //texture_loader.load_context.asset_io().is_dir(Path::new("Materials"));
+        let single_model = texture_loader
+            .load_context
+            .asset_io()
+            .is_dir(parent.join("Materials").as_path());
         let mat_name = material_obj.name().and_then(|m| m.split(".").next());
         guard! { let Some(mat_name) = mat_name else {
             println!("Cannot parse material name {:?}", material_obj.name());
@@ -143,6 +169,11 @@ pub fn load_cel_material<'a, 'w>(
 
         let path = parent.join(path);
 
+        if !texture_loader.load_context.asset_io().is_file(&path) {
+            println!("Cannot load material json properties");
+            return Ok(None);
+        }
+
         let properties = texture_loader.load_context.read_asset_bytes(path).await?;
         let properties: MaterialPropertiesRoot = serde_json::from_slice(properties.as_slice())?;
 
@@ -152,7 +183,7 @@ pub fn load_cel_material<'a, 'w>(
                 load_map!("Tex_FaceLightmap", 2),
                 load_map!("Tex_Face_Shadow", 1),
                 load_map!("Tex_MetalMap", 1),
-                load_map!("Body_Shadow_Ramp", 5),
+                load_optional_map!("Shadow_Ramp", 5),
                 properties.into(),
             )))
         } else {
@@ -176,6 +207,7 @@ pub fn load_cel_material_fallback<'a, 'w>(
         println!("using fallback for {:?}", material_obj.name());
         let mut mat = CelMaterial::default();
         mat.is_face = true;
+        mat.diffuse_only = true;
         Ok(Some(mat))
     })
 }
