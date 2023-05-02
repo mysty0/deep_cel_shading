@@ -20,7 +20,8 @@ use bevy_common_assets::ron::RonAssetPlugin;
 use bevy_editor_pls::prelude::*;
 #[cfg(feature = "ui")]
 use bevy_egui::{egui, EguiContext, EguiPlugin};
-use bevy_mod_fbx::{FbxLoader, FbxMaterialLoaders, FbxMesh, FbxScene};
+use bevy_mod_fbx::material_loader::{LOAD_LAMBERT_PHONG, LOAD_FALLBACK};
+use bevy_mod_fbx::{FbxLoader, FbxMaterialLoaders, FbxMesh, FbxScene, FbxPlugin};
 //use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
 use camera_control::{pan_orbit_camera, spawn_camera};
 use cel_material::CelMaterial;
@@ -237,26 +238,33 @@ fn main() {
             ..Default::default()
         }))
         // .add_plugin(DebugLinesPlugin::default())
+        .add_plugin(RonAssetPlugin::<PresetsGroups>::new(&["ron"]))
+
         .insert_resource(FbxMaterialLoaders::<CelMaterial>(vec![
             &load_cel_material,
             &load_cel_material_fallback,
         ]))
-        .add_plugin(RonAssetPlugin::<PresetsGroups>::new(&["ron"]))
-        //.add_plugin(FbxPlugin)
         .init_asset_loader::<FbxLoader<CelMaterial>>()
         .add_asset::<FbxMesh<CelMaterial>>()
         .add_asset::<FbxScene<CelMaterial>>()
+        //.init_asset_loader::<FbxLoader<StandardMaterial>>()
+        // .insert_resource(FbxMaterialLoaders::<StandardMaterial>(vec![
+        //     &LOAD_LAMBERT_PHONG,
+        //     &LOAD_FALLBACK,
+        // ]))
+        //.add_plugin(FbxPlugin)
+
         .add_plugin(MaterialPlugin::<CelMaterial>::default())
         .add_plugin(CelShaderPlugin)
         .add_system(pan_orbit_camera)
         .add_plugin(UiPlugin)
         .add_startup_system(setup)
-        .add_system(initialize)
+        .add_system(initialize::<CelMaterial>)
         .add_plugin(GeneratePlugin)
         .add_system(hotkey_system)
         .add_system(update_face_direction)
         //.add_system(axis_lines)
-        .add_system(rotate_character_system)
+        //.add_system(rotate_character_system)
         .run();
 }
 
@@ -661,9 +669,10 @@ fn ui_system(
 //     );
 // }
 
-fn initialize(
-    mut ev_asset: EventReader<AssetEvent<FbxScene<CelMaterial>>>,
+fn initialize<M: bevy::prelude::Material>(
+    mut ev_asset: EventReader<AssetEvent<FbxScene<M>>>,
     mut query_visibility: Query<(&Handle<CelMaterial>, &mut Visibility)>,
+    mut query_visibility_name: Query<(&Name, &mut Visibility, Without<Handle<CelMaterial>>)>,
     mut app_state: ResMut<State<AppState>>,
     materials: Res<Assets<CelMaterial>>
 ) {
@@ -684,6 +693,10 @@ fn initialize(
                             vis.1.is_visible = false;
                         }
                     });
+
+                    if let Some((_, mut vis, _)) = query_visibility_name.iter_mut().find(|(name, _, _)| name.as_str() == "EffectMesh") {
+                        vis.is_visible = false;
+                    }
 
                 if *app_state.as_ref().current() != AppState::Ready {
                     app_state.as_mut().set(AppState::Ready).unwrap();

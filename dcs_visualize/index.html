@@ -27,15 +27,24 @@
         return numerator / denominator;
     }
 
+    const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+
+    function smoothStep(x) {
+        let edge0 = 0;
+        let edge1 = 1;
+        let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    }
+
     function relu(x) {
-  return Math.max(0, x);
-}
+        return Math.max(0, x);
+    }
 
     //makeGraph('sigmoid(x)', sigmoid, -8, 8, 0.5)
-    makeGraph('tanh(x)', tanh, -8, 8, 0.5)
+    makeGraph('smoothStep(0, 1, x)', smoothStep, -0.5, 1.5, 0.1)
     //makeGraph('relu(x)', relu, -8, 8, 0.5, 0)
 
-    function makeGraph(name, fun, min, max, step, tension=0.4) {
+    function makeGraph(name, fun, min, max, step, tension = 0.4) {
         const generate = (fun, min, max, step) => {
             var y = []
             var x = []
@@ -118,8 +127,8 @@
                             display: true,
                             text: name
                         },
-                        suggestedMin: -1.5,
-                        suggestedMax: 1.3,
+                        suggestedMin: -0.5,
+                        suggestedMax: 1.5,
                         // ticks: {
                         // // forces step size to be 50 units
                         // stepSize: 0.2

@@ -3,20 +3,32 @@ use bevy::tasks::IoTaskPool;
 use bevy::utils::HashMap;
 use bevy::window::WindowId;
 use bevy::{asset::load_internal_asset, prelude::*};
-use bevy_common_assets::ron::RonAssetPlugin;
 //use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
 use camera_control::{pan_orbit_camera, spawn_camera};
-use serde::Deserialize;
+use experiment_shaders::TestMaterial;
+
+mod camera_control;
+mod experiment_shaders;
 
 fn main() {
     App::new()
-    .add_plugins(DefaultPlugins.set(AssetPlugin {
-        watch_for_changes: true,
-        ..Default::default()
-    }))
-    .add_plugin(MaterialPlugin::<TestMaterial>::default())
-    .add_system(pan_orbit_camera)
-    .add_startup_system(setup)
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            watch_for_changes: true,
+            ..Default::default()
+        }).set(WindowPlugin {
+            window: WindowDescriptor {
+                // Setting `transparent` allows the `ClearColor`'s alpha value to take effect
+                transparent: true,
+                // Disabling window decorations to make it feel more like a widget than a window
+                decorations: false,
+                ..default()
+            },
+            ..default()
+        }))
+        .insert_resource(ClearColor(Color::WHITE))
+        .add_plugin(MaterialPlugin::<TestMaterial>::default())
+        .add_system(pan_orbit_camera)
+        .add_startup_system(setup)
         .run();
 }
 
@@ -49,9 +61,15 @@ fn setup(
     // });
 
     commands.spawn(MaterialMeshBundle {
-        mesh: meshes.add(shape::UVSphere{ radius: 20.0, ..Default::default()}.into()),
+        mesh: meshes.add(
+            shape::UVSphere {
+                radius: 0.25,
+                ..Default::default()
+            }
+            .into(),
+        ),
         material: test_materials.add(TestMaterial {
-            matcap: Some(asset_server.load("models/Characters/Diona/Avatar_Tex_MetalMap.png"))
+            matcap: Some(asset_server.load("metal_map.png")),
         }),
         ..default()
     });

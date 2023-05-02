@@ -257,7 +257,7 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         let width = shadow_ramp_multiplier * 2.0 * properties.shadow_ramp_values.width;
 
         let occlusion = smoothstep(0.01, 0.4, occlusion);
-        let factor = mix(0.0, factor, saturate(factor));
+        let factor = mix(0.0, factor, saturate(occlusion));
         let lit_factor = factor < properties.light_area;
 
         let factor = 1.0 - ((properties.light_area - factor) / properties.light_area) / width;
@@ -271,7 +271,7 @@ fn shadow_ramp(material_id: i32, factor: f32, occlusion: f32, shadow_ramp_multip
         // switch between 1 and ramp edge like how the game does it, also make eyes always lit
         //ShadowFinal = (litFactor && lightmapTex.g < 0.95) ? ShadowFinal : 1;
 
-        return shadow;//select(vec4<f32>(1.0), mix(shadow, vec4<f32>(1.0), factor), lit_factor);//vec4<f32>(factor);//
+        return shadow;//mix(shadow, vec4<f32>(1.0), factor);//shadow;//select(vec4<f32>(1.0), mix(shadow, vec4<f32>(1.0), factor), lit_factor);//vec4<f32>(factor);//
     } else {
         let factor = (factor + occlusion) * 0.5;
         let factor = select(factor, 1.0, occlusion > 0.95);
@@ -436,9 +436,9 @@ fn standart_cel_color(
     let light = light * 0.5 + 0.5;
 
     //specular
-    let view_direction = calculate_view(world_position);
-    let light_pos = normalize(light_position + view_direction);
-    let metal_specular = dot(normal, light_pos);
+   // let view_direction = calculate_view(world_position);
+    //let light_pos = normalize(light_position + view_direction);
+   // let metal_specular = dot(normal, light_pos);
     
     let occlusion = select(0.5, light_map.g, properties.use_ligth_map_color_ao > 0.0) * select(1.0, vertex_color.r, properties.use_vertex_color_ao > 0.0);
 
@@ -480,8 +480,9 @@ fn standart_cel_color(
     // apply _MTShadowMultiColor ONLY to shaded areas
     let metal = mix(metal * properties.metal_map_shadow_multi_color, metal, saturate(light));
 
-   // let specular_light_dir = normalize(view_direction + light_position);
-    let specular_light = dot(normal, light_pos);
+    let specular_light_dir = normalize(light_position - world_position.xyz);
+    let view_direction = -calculate_view(world_position);
+    let specular_light = dot(view_direction, reflect(specular_light_dir, normal));
     let metal_specular = saturate(pow(specular_light, properties.metal_map_shininess) * properties.metal_map_specular_scale);
     var metal_specular_color = vec4<f32>(metal_specular);
     if properties.metal_map_sharp_layer_offset < metal_specular {
