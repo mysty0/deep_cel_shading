@@ -1,3 +1,9 @@
 [submodule "pytorch-CycleGAN-and-pix2pix"]
 	path = pytorch-CycleGAN-and-pix2pix
 	url = https://github.com/mysty0/pytorch-CycleGAN-and-pix2pix.git
+[submodule "dataset_generator/bevy_mod_fbx"]
+	path = dataset_generator/bevy_mod_fbx
+	url = https://github.com/mysty0/bevy_mod_fbx.git
+[submodule "dataset_generator/fbxcel-dom"]
+	path = dataset_generator/fbxcel-dom
+	url = https://github.com/mysty0/fbxcel-dom.git
