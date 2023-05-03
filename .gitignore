@@ -194,3 +194,7 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,python
+
+res_compare/
+res_compare - Copy/
+test_ds/
